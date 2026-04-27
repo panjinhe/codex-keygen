@@ -1,0 +1,14 @@
+{
+  "name": "codex-keygen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node ./codex-keygen.mjs",
+    "manual": "node ./codex-keygen.mjs --manual",
+    "ui": "node ./codex-keygen.mjs --ui"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
