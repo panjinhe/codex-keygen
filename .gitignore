@@ -2,3 +2,5 @@ codex-key*.json
 *.token.json
 secrets/
 .env
+node_modules/
+output/

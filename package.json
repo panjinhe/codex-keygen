@@ -6,7 +6,13 @@
   "scripts": {
     "start": "node ./codex-keygen.mjs",
     "manual": "node ./codex-keygen.mjs --manual",
-    "ui": "node ./codex-keygen.mjs --ui"
+    "ui": "node ./codex-keygen.mjs --ui",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "imapflow": "^1.0.194",
+    "mailparser": "^3.7.4",
+    "playwright": "^1.56.1"
   },
   "engines": {
     "node": ">=18"

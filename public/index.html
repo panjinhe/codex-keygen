@@ -17,65 +17,122 @@
       </header>
 
       <main class="workspace">
-        <section class="panel primary-panel" aria-labelledby="auth-title">
-          <div class="section-head">
-            <div>
-              <h2 id="auth-title">生成渠道密钥</h2>
-              <p>在本机完成 OpenAI Codex OAuth，结果保存为 new-api 可直接使用的 JSON。</p>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button class="button primary" id="start-auth">打开授权页面</button>
-            <button class="button" id="load-key">读取 JSON</button>
-            <button class="button" id="refresh-key">刷新凭证</button>
-          </div>
-
-          <div class="notice">
-            <strong>保存格式</strong>
-            <span id="key-file">secrets/codex-channel-key.json</span>
-          </div>
-
-          <div class="notice warning">
-            <strong>账号保护</strong>
-            <span>这个 JSON 含有 refresh_token，只放在本机使用，不要提交 git 或发给别人。</span>
-          </div>
-
-          <div class="log" id="message">等待操作。</div>
+        <section class="toolbar" aria-label="批量操作">
+          <button class="button primary" id="open-import">导入账号</button>
+          <label class="control">
+            <span>并发</span>
+            <input id="workers" type="number" min="1" max="2" step="1" value="1">
+          </label>
+          <label class="control">
+            <span>筛选</span>
+            <select id="status-filter">
+              <option value="all">全部</option>
+              <option value="pending">待登录</option>
+              <option value="running">登录中</option>
+              <option value="success">成功</option>
+              <option value="failed">失败</option>
+              <option value="saved">已保存</option>
+            </select>
+          </label>
+          <input class="search" id="search" type="search" placeholder="搜索邮箱">
+          <button class="button" id="login-selected" disabled>登录选中</button>
+          <button class="button" id="retry-failed" disabled>重试失败</button>
+          <button class="button danger" id="delete-selected" disabled>删除选中</button>
         </section>
 
-        <section class="panel detail-panel" aria-labelledby="key-title">
-          <div class="section-head compact">
-            <div>
-              <h2 id="key-title">已保存凭证</h2>
-              <p>复制整段 JSON 到 Codex 渠道密钥。</p>
-            </div>
-            <button class="button small" id="copy-key" disabled>复制 JSON</button>
+        <section class="stats" aria-label="状态统计">
+          <div><strong id="stat-total">0</strong><span>全部</span></div>
+          <div><strong id="stat-pending">0</strong><span>待登录</span></div>
+          <div><strong id="stat-success">0</strong><span>成功</span></div>
+          <div><strong id="stat-failed">0</strong><span>失败</span></div>
+          <div><strong id="stat-saved">0</strong><span>已保存</span></div>
+        </section>
+
+        <section class="table-shell" aria-label="账号表格">
+          <div class="table-head">
+            <label><input id="select-all" type="checkbox"> 选择</label>
+            <span>状态</span>
+            <span>邮箱</span>
+            <span>OpenAI 密码</span>
+            <span>邮箱账号</span>
+            <span>错误</span>
+            <span>Token</span>
+            <span>操作</span>
           </div>
+          <div class="table-body" id="account-list">
+            <div class="empty">点击“导入账号”开始。</div>
+          </div>
+        </section>
 
-          <dl class="summary" id="summary">
-            <div>
-              <dt>Account</dt>
-              <dd>-</dd>
+        <section class="bottom-grid">
+          <section class="logs" aria-labelledby="logs-title">
+            <div class="section-head compact">
+              <h2 id="logs-title">实时日志</h2>
+              <button class="button small" id="clear-logs">清空</button>
             </div>
-            <div>
-              <dt>Email</dt>
-              <dd>-</dd>
-            </div>
-            <div>
-              <dt>Expires</dt>
-              <dd>-</dd>
-            </div>
-            <div>
-              <dt>Last refresh</dt>
-              <dd>-</dd>
-            </div>
-          </dl>
+            <pre id="logs">等待操作。</pre>
+          </section>
 
-          <textarea id="key-json" spellcheck="false" readonly placeholder="生成或读取后会显示 JSON"></textarea>
+          <section class="single-panel" aria-labelledby="single-title">
+            <div class="section-head compact">
+              <div>
+                <h2 id="single-title">单账号兼容模式</h2>
+                <p>保留原来的交互式 OAuth 和 JSON 复制流程。</p>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="button" id="start-auth">打开授权页面</button>
+              <button class="button" id="load-key">读取 JSON</button>
+              <button class="button" id="refresh-key">刷新凭证</button>
+              <button class="button" id="copy-key" disabled>复制 JSON</button>
+            </div>
+            <div class="notice">
+              <strong>保存格式</strong>
+              <span id="key-file">secrets/codex-channel-key.json</span>
+            </div>
+            <dl class="summary" id="summary">
+              <div><dt>Account</dt><dd>-</dd></div>
+              <div><dt>Email</dt><dd>-</dd></div>
+              <div><dt>Expires</dt><dd>-</dd></div>
+              <div><dt>Last refresh</dt><dd>-</dd></div>
+            </dl>
+            <textarea id="key-json" spellcheck="false" readonly placeholder="生成或读取后会显示 JSON"></textarea>
+          </section>
         </section>
       </main>
     </div>
+
+    <dialog id="import-dialog">
+      <form method="dialog" class="dialog-body">
+        <div class="section-head compact">
+          <div>
+            <h2>导入批量账号</h2>
+            <p>每行一个账号，支持四种固定格式。</p>
+          </div>
+          <button class="icon-button" id="close-import" value="cancel" aria-label="关闭">×</button>
+        </div>
+        <textarea id="import-text" spellcheck="false" placeholder="openai_email | openai_password&#10;openai_email | openai_password | mailbox_password&#10;openai_email | openai_password | mailbox_email | mailbox_password&#10;openai_email | openai_password | mailbox_email | mailbox_password | imap_host | imap_port"></textarea>
+        <div class="import-meta" id="import-meta">等待粘贴账号。</div>
+        <div class="dialog-actions">
+          <button class="button" id="fill-sample" type="button">示例</button>
+          <button class="button" id="preview-import" type="button">预览</button>
+          <button class="button primary" id="apply-import" type="button" disabled>导入</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="mail-dialog">
+      <form method="dialog" class="dialog-body">
+        <div class="section-head compact">
+          <div>
+            <h2 id="mail-title">邮件</h2>
+            <p>最近 10 分钟内识别到的验证码邮件。</p>
+          </div>
+          <button class="icon-button" value="cancel" aria-label="关闭">×</button>
+        </div>
+        <div id="mail-content" class="mail-content">暂无邮件。</div>
+      </form>
+    </dialog>
 
     <script src="/app.js" type="module"></script>
   </body>
