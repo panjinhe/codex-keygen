@@ -1,0 +1,18 @@
+{
+  "type": "codex",
+  "email": "<email>",
+  "expired": "<access_token_expired_at_rfc3339>",
+  "id_token": "<id_token>",
+  "account_id": "<chatgpt_account_id>",
+  "access_token": "<access_token>",
+  "session_token": "",
+  "last_refresh": "<last_refresh_rfc3339>",
+  "refresh_token": "<refresh_token>",
+  "password": "",
+  "plan_type": "plus",
+  "recharge_state": "plus_ready",
+  "exported_at": "<exported_at_rfc3339>",
+  "source_token_path": "",
+  "source_webtoken_path": "",
+  "plus_web_token": {}
+}

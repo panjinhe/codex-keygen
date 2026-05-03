@@ -44,6 +44,29 @@ Batch login token records are saved to:
 E:\codex-keygen\secrets\accounts.json
 ```
 
+### CPA flat format
+
+CPA imports expect a flat JSON object, not the nested `auth_mode` / `tokens` format. A safe placeholder template is kept in:
+
+```text
+E:\codex-keygen\cpa-template.example.json
+```
+
+Use the generated Codex key fields as follows:
+
+- `type`: `codex`
+- `email`: generated key `email`
+- `expired`: generated key `expired`
+- `id_token`: OAuth `id_token` when available
+- `account_id`: generated key `account_id`
+- `access_token`: generated key `access_token`
+- `last_refresh`: generated key `last_refresh`
+- `refresh_token`: generated key `refresh_token`
+- `plan_type`: `plus`
+- `recharge_state`: `plus_ready`
+
+Keep real CPA files under `secrets/` or another ignored private location. Tokens are live credentials.
+
 The batch importer supports:
 
 ```text
