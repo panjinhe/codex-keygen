@@ -67,8 +67,12 @@ async function startAuth() {
   try {
     const payload = await api('/api/start', { method: 'POST' });
     const url = payload.data.authorize_url;
-    logLine('授权页面已打开。登录完成后，回调页会自动保存 JSON。');
-    window.open(url, '_blank', 'noopener,noreferrer');
+    if (payload.data.mode === 'isolated-browser') {
+      logLine('已打开隔离授权窗口。登录完成后会自动保存 JSON。');
+    } else {
+      logLine('授权页面已打开。登录完成后，回调页会自动保存 JSON。');
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
   } catch (error) {
     logLine(error.message, true);
   } finally {
@@ -199,7 +203,7 @@ async function loginRows(rows) {
       method: 'POST',
       headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        workers: Number(elements.workers.value) || 1,
+        workers: 1,
         accounts: loginRows.map((entry) => entry.rawLine),
       }),
     });

@@ -32,7 +32,8 @@ const PROJECT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_KEY_FILE = resolve(PROJECT_DIR, 'secrets', 'codex-channel-key.json');
 const DEFAULT_ACCOUNTS_FILE = resolve(PROJECT_DIR, 'secrets', 'accounts.json');
 const DEFAULT_EXPORT_DIR = resolve(PROJECT_DIR, 'secrets', 'cpa-exports');
-const MAX_LOGIN_WORKERS = 2;
+const MAX_LOGIN_WORKERS = 1;
+const ISOLATED_AUTH_TIMEOUT_MS = 5 * 60 * 1000;
 
 const args = parseArgs(process.argv.slice(2));
 
@@ -403,11 +404,17 @@ async function runWebUI({ keyFile, accountsFile, exportDir, openBrowser }) {
       if (req.method === 'POST' && reqUrl.pathname === '/api/start') {
         pruneExpiredFlows(flows);
         const flow = createAuthorizationFlow();
-        flows.set(flow.state, flow);
+        flows.set(flow.state, { ...flow, mode: 'single-isolated' });
+        const launch = launchIsolatedAuthBrowser(flow, flows);
+        launch.catch((error) => {
+          flows.delete(flow.state);
+          console.error(`Failed to launch isolated auth browser: ${error?.message || error}`);
+        });
         sendJson(res, 200, {
           success: true,
           data: {
             authorize_url: flow.authorizeUrl,
+            mode: 'isolated-browser',
           },
         });
         return;
@@ -506,11 +513,15 @@ async function handleWebCallback(reqUrl, res, flows, keyFile, exportDir) {
     return;
   }
 
-  const token = await exchangeAuthorizationCode({ code, verifier: flow.verifier });
-  const key = buildChannelKey(token);
-  await writeKeyFile(keyFile, key);
-  await writeEmailKeyFile(exportDir, key);
-  sendCallbackPage(res, true, 'Credential saved. Return to the keygen tab.');
+  try {
+    const token = await exchangeAuthorizationCode({ code, verifier: flow.verifier });
+    const key = buildChannelKey(token);
+    await writeKeyFile(keyFile, key);
+    await writeEmailKeyFile(exportDir, key);
+    sendCallbackPage(res, true, 'Credential saved. Return to the keygen tab.');
+  } finally {
+    await flow.cleanup?.().catch(() => {});
+  }
 }
 
 function sendCallbackPage(res, success, message) {
@@ -551,7 +562,7 @@ async function handleLoginStream(req, res, flows, accountsFile, exportDir) {
 
   const body = await readJsonBody(req);
   const parsed = parseLoginAccounts(body.accounts || body.text || '');
-  const workers = clampInteger(body.workers, 1, MAX_LOGIN_WORKERS, 1);
+  const workers = 1;
 
   startEventStream(res);
   res.on('close', () => {
@@ -589,7 +600,7 @@ async function handleLoginStream(req, res, flows, accountsFile, exportDir) {
     return;
   }
 
-  emit('log', { message: `批量开始：${parsed.rows.length} 个账号，并发 ${Math.min(workers, parsed.rows.length)}。` });
+  emit('log', { message: `批量开始：${parsed.rows.length} 个账号，安全串行登录。` });
 
   let cursor = 0;
   let ok = 0;
@@ -714,6 +725,40 @@ async function launchVisibleBrowser(chromium) {
     }
   }
   throw new Error(errors.join('\n'));
+}
+
+async function launchIsolatedAuthBrowser(flow, flows) {
+  const { chromium } = await import('playwright');
+  const browser = await launchVisibleBrowser(chromium);
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  let closed = false;
+  const cleanup = async () => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    flows.delete(flow.state);
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+  };
+
+  const stored = flows.get(flow.state);
+  if (stored) {
+    stored.cleanup = cleanup;
+  }
+
+  setTimeout(() => {
+    const current = flows.get(flow.state);
+    current?.cleanup?.().catch(() => {});
+  }, ISOLATED_AUTH_TIMEOUT_MS).unref?.();
+
+  try {
+    await page.goto(flow.authorizeUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
 }
 
 async function loginAccountWithBrowser(account, { browser, flows, emit }) {

@@ -23,8 +23,8 @@ node .\codex-keygen.mjs --ui
 
 Open `http://localhost:1455/`. The UI now has two modes:
 
-- **批量登录辅助器**: import account lines, query mailbox verification codes through IMAP, and run a visible Playwright browser login flow.
-- **单账号兼容模式**: click **打开授权页面**, finish login manually, then return to the UI.
+- **批量登录辅助器**: import account lines, query mailbox verification codes through IMAP, and run a visible Playwright browser login flow. Login is intentionally serialized so each generated CPA uses an isolated OAuth flow.
+- **单账号兼容模式**: click **打开授权页面**, finish login in the isolated browser window, then return to the UI.
 
 The single-account generated channel key is saved as JSON:
 
@@ -39,6 +39,8 @@ E:\codex-keygen\secrets\cpa-exports\<email>.json
 ```
 
 This folder is the recommended output when exporting many CPA files. If the same email is generated again, the file for that email is overwritten with the latest rotated refresh token, so you do not keep multiple fighting copies of the same account.
+
+Avoid generating several CPA files in parallel. OAuth refresh tokens can be invalidated by upstream session/device rotation, so the UI opens isolated browser contexts and runs batch logins one at a time.
 
 You can choose a different save path:
 
