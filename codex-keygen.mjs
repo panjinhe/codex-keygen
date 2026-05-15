@@ -19,6 +19,7 @@ import {
   sanitizeAccountForLogin,
   toSafeImportedRow,
 } from './lib/account-utils.mjs';
+import { credentialFilename } from './lib/credential-files.mjs';
 
 const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const AUTHORIZE_URL = 'https://auth.openai.com/oauth/authorize';
@@ -30,6 +31,7 @@ const CALLBACK_PORT = 1455;
 const PROJECT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_KEY_FILE = resolve(PROJECT_DIR, 'secrets', 'codex-channel-key.json');
 const DEFAULT_ACCOUNTS_FILE = resolve(PROJECT_DIR, 'secrets', 'accounts.json');
+const DEFAULT_EXPORT_DIR = resolve(PROJECT_DIR, 'secrets', 'cpa-exports');
 const MAX_LOGIN_WORKERS = 2;
 
 const args = parseArgs(process.argv.slice(2));
@@ -44,6 +46,7 @@ try {
     await runWebUI({
       keyFile: resolveKeyPath(args.keyFile),
       accountsFile: resolveKeyPath(args.accountsFile),
+      exportDir: resolveKeyPath(args.exportDir),
       openBrowser: args.openBrowser,
     });
     process.exit(0);
@@ -56,6 +59,7 @@ try {
   const json = stableStringify(key);
   if (args.out) {
     await writeKeyFile(args.out, key);
+    await writeEmailKeyFile(args.exportDir, key);
     console.error(`Wrote Codex channel key to ${args.out}`);
   } else {
     console.log(json);
@@ -74,6 +78,7 @@ function parseArgs(argv) {
     out: '',
     keyFile: DEFAULT_KEY_FILE,
     accountsFile: DEFAULT_ACCOUNTS_FILE,
+    exportDir: DEFAULT_EXPORT_DIR,
     refresh: '',
   };
 
@@ -93,6 +98,8 @@ function parseArgs(argv) {
       parsed.keyFile = requireValue(argv, ++i, '--key-file');
     } else if (arg === '--accounts-file') {
       parsed.accountsFile = requireValue(argv, ++i, '--accounts-file');
+    } else if (arg === '--export-dir') {
+      parsed.exportDir = requireValue(argv, ++i, '--export-dir');
     } else if (arg === '--refresh') {
       parsed.refresh = requireValue(argv, ++i, '--refresh');
     } else {
@@ -122,6 +129,7 @@ Options:
   --out <path>          Write the generated JSON to a file instead of stdout.
   --key-file <path>     Web UI save path. Default: ${DEFAULT_KEY_FILE}
   --accounts-file <path> Batch account store. Default: ${DEFAULT_ACCOUNTS_FILE}
+  --export-dir <path>   Directory for per-email CPA JSON exports. Default: ${DEFAULT_EXPORT_DIR}
   --refresh <token>     Refresh an existing refresh_token and print a new channel key JSON.
   -h, --help            Show this help.
 `);
@@ -291,7 +299,7 @@ async function refreshKey(refreshToken) {
   return buildChannelKey(token);
 }
 
-async function runWebUI({ keyFile, accountsFile, openBrowser }) {
+async function runWebUI({ keyFile, accountsFile, exportDir, openBrowser }) {
   const flows = new Map();
   const publicFiles = new Map([
     ['/', { path: resolve(PROJECT_DIR, 'public', 'index.html'), type: 'text/html; charset=utf-8' }],
@@ -317,6 +325,7 @@ async function runWebUI({ keyFile, accountsFile, openBrowser }) {
           data: {
             key_file: keyFile,
             accounts_file: accountsFile,
+            export_dir: exportDir,
             exists: Boolean(key),
             summary: key ? summarizeKey(key) : null,
           },
@@ -370,7 +379,7 @@ async function runWebUI({ keyFile, accountsFile, openBrowser }) {
       }
 
       if (req.method === 'POST' && reqUrl.pathname === '/api/login') {
-        await handleLoginStream(req, res, flows, accountsFile);
+        await handleLoginStream(req, res, flows, accountsFile, exportDir);
         return;
       }
 
@@ -412,10 +421,12 @@ async function runWebUI({ keyFile, accountsFile, openBrowser }) {
         }
         const key = await refreshKey(existing.refresh_token);
         await writeKeyFile(keyFile, key);
+        const exportPath = await writeEmailKeyFile(exportDir, key);
         sendJson(res, 200, {
           success: true,
           data: {
             key_file: keyFile,
+            export_file: exportPath,
             key: stableStringify(key),
             summary: summarizeKey(key),
           },
@@ -424,7 +435,7 @@ async function runWebUI({ keyFile, accountsFile, openBrowser }) {
       }
 
       if (req.method === 'GET' && reqUrl.pathname === '/auth/callback') {
-        await handleWebCallback(reqUrl, res, flows, keyFile);
+        await handleWebCallback(reqUrl, res, flows, keyFile, exportDir);
         return;
       }
 
@@ -456,6 +467,7 @@ async function runWebUI({ keyFile, accountsFile, openBrowser }) {
   console.error(`Codex Keygen UI: ${uiUrl}`);
   console.error(`Key file: ${keyFile}`);
   console.error(`Accounts file: ${accountsFile}`);
+  console.error(`Export dir: ${exportDir}`);
   console.error('Press Ctrl+C to stop.');
 
   if (openBrowser) {
@@ -472,7 +484,7 @@ async function runWebUI({ keyFile, accountsFile, openBrowser }) {
   });
 }
 
-async function handleWebCallback(reqUrl, res, flows, keyFile) {
+async function handleWebCallback(reqUrl, res, flows, keyFile, exportDir) {
   const code = reqUrl.searchParams.get('code') || '';
   const state = reqUrl.searchParams.get('state') || '';
 
@@ -497,6 +509,7 @@ async function handleWebCallback(reqUrl, res, flows, keyFile) {
   const token = await exchangeAuthorizationCode({ code, verifier: flow.verifier });
   const key = buildChannelKey(token);
   await writeKeyFile(keyFile, key);
+  await writeEmailKeyFile(exportDir, key);
   sendCallbackPage(res, true, 'Credential saved. Return to the keygen tab.');
 }
 
@@ -532,7 +545,7 @@ function pruneExpiredFlows(flows) {
   }
 }
 
-async function handleLoginStream(req, res, flows, accountsFile) {
+async function handleLoginStream(req, res, flows, accountsFile, exportDir) {
   let browser;
   let aborted = false;
 
@@ -597,13 +610,14 @@ async function handleLoginStream(req, res, flows, accountsFile) {
       emit('log', { email: account.email, message: `开始登录第 ${index + 1}/${parsed.rows.length} 个账号：${account.email}` });
       try {
         const result = await loginAccountWithBrowser(account, { browser, flows, emit });
-        await upsertStoredAccount(accountsFile, result.token);
+        const exportPath = await upsertStoredAccount(accountsFile, result.token, exportDir);
         ok += 1;
         emit('result', {
           email: account.email,
           ok: true,
           token: result.token,
           summary: summarizeKey(result.token),
+          export_file: exportPath,
         });
         emit('log', { email: account.email, message: `${account.email} 登录成功。` });
       } catch (error) {
@@ -928,7 +942,7 @@ async function writeAccountsStore(filePath, store) {
   await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
 }
 
-async function upsertStoredAccount(filePath, token) {
+async function upsertStoredAccount(filePath, token, exportDir = DEFAULT_EXPORT_DIR) {
   const store = await readAccountsStore(filePath);
   const now = formatRFC3339(new Date());
   const id = storedAccountID(token);
@@ -950,6 +964,7 @@ async function upsertStoredAccount(filePath, token) {
     store.accounts.push({ ...next, created_at: now });
   }
   await writeAccountsStore(filePath, store);
+  return writeEmailKeyFile(exportDir, token);
 }
 
 async function deleteStoredAccounts(filePath, { ids, emails }) {
@@ -1158,6 +1173,14 @@ async function writeKeyFile(filePath, key) {
   await writeFile(resolved, `${stableStringify(key)}\n`, { mode: 0o600 });
 }
 
+async function writeEmailKeyFile(exportDir, key) {
+  const filename = credentialFilename(key);
+  const resolved = resolve(resolveKeyPath(exportDir || DEFAULT_EXPORT_DIR), filename);
+  await mkdir(dirname(resolved), { recursive: true });
+  await writeFile(resolved, `${stableStringify(key)}\n`, { mode: 0o600 });
+  return resolved;
+}
+
 function summarizeKey(key) {
   return {
     account_id: key.account_id || '',
@@ -1250,7 +1273,8 @@ function buildChannelKey(token) {
     expired: formatRFC3339(token.expiresAt),
   };
 
-  const email = String(claims.email || '').trim();
+  const profileClaim = claims['https://api.openai.com/profile'] || {};
+  const email = String(claims.email || profileClaim.email || '').trim();
   if (email) {
     key.email = email;
   }

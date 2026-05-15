@@ -32,10 +32,24 @@ The single-account generated channel key is saved as JSON:
 E:\codex-keygen\secrets\codex-channel-key.json
 ```
 
+Every generated credential is also exported as a separate CPA JSON file named by email:
+
+```text
+E:\codex-keygen\secrets\cpa-exports\<email>.json
+```
+
+This folder is the recommended output when exporting many CPA files. If the same email is generated again, the file for that email is overwritten with the latest rotated refresh token, so you do not keep multiple fighting copies of the same account.
+
 You can choose a different save path:
 
 ```powershell
 node .\codex-keygen.mjs --ui --key-file .\secrets\my-codex-key.json
+```
+
+You can choose a different per-email export folder:
+
+```powershell
+node .\codex-keygen.mjs --ui --export-dir .\secrets\my-cpa-exports
 ```
 
 Batch login token records are saved to:
